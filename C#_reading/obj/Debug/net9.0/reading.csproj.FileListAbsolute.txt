@@ -1,0 +1,17 @@
+C:\Users\user\Desktop\проект\reading\bin\Debug\net9.0\reading.exe
+C:\Users\user\Desktop\проект\reading\bin\Debug\net9.0\reading.deps.json
+C:\Users\user\Desktop\проект\reading\bin\Debug\net9.0\reading.runtimeconfig.json
+C:\Users\user\Desktop\проект\reading\bin\Debug\net9.0\reading.dll
+C:\Users\user\Desktop\проект\reading\bin\Debug\net9.0\reading.pdb
+C:\Users\user\Desktop\проект\reading\obj\Debug\net9.0\reading.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\user\Desktop\проект\reading\obj\Debug\net9.0\reading.AssemblyInfoInputs.cache
+C:\Users\user\Desktop\проект\reading\obj\Debug\net9.0\reading.AssemblyInfo.cs
+C:\Users\user\Desktop\проект\reading\obj\Debug\net9.0\reading.csproj.CoreCompileInputs.cache
+C:\Users\user\Desktop\проект\reading\obj\Debug\net9.0\reading.dll
+C:\Users\user\Desktop\проект\reading\obj\Debug\net9.0\refint\reading.dll
+C:\Users\user\Desktop\проект\reading\obj\Debug\net9.0\reading.pdb
+C:\Users\user\Desktop\проект\reading\obj\Debug\net9.0\reading.genruntimeconfig.cache
+C:\Users\user\Desktop\проект\reading\obj\Debug\net9.0\ref\reading.dll
+C:\Users\user\Desktop\проект\reading\bin\Debug\net9.0\Data_Gravimeter.dat
+C:\Users\user\Desktop\проект\reading\bin\Debug\net9.0\Phase_L1.VEL
+c:\Users\user\Desktop\проект\reading\obj\Debug\net9.0\reading.sourcelink.json
