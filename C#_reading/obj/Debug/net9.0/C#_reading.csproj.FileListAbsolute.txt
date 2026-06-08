@@ -1,0 +1,15 @@
+C:\Users\user\Desktop\проект\C#_reading\bin\Debug\net9.0\C#_reading.exe
+C:\Users\user\Desktop\проект\C#_reading\bin\Debug\net9.0\C#_reading.deps.json
+C:\Users\user\Desktop\проект\C#_reading\bin\Debug\net9.0\C#_reading.runtimeconfig.json
+C:\Users\user\Desktop\проект\C#_reading\bin\Debug\net9.0\C#_reading.dll
+C:\Users\user\Desktop\проект\C#_reading\bin\Debug\net9.0\C#_reading.pdb
+C:\Users\user\Desktop\проект\C#_reading\obj\Debug\net9.0\C#_reading.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\user\Desktop\проект\C#_reading\obj\Debug\net9.0\C#_reading.AssemblyInfoInputs.cache
+C:\Users\user\Desktop\проект\C#_reading\obj\Debug\net9.0\C#_reading.AssemblyInfo.cs
+C:\Users\user\Desktop\проект\C#_reading\obj\Debug\net9.0\C#_reading.csproj.CoreCompileInputs.cache
+C:\Users\user\Desktop\проект\C#_reading\obj\Debug\net9.0\C#_reading.sourcelink.json
+C:\Users\user\Desktop\проект\C#_reading\obj\Debug\net9.0\C#_reading.dll
+C:\Users\user\Desktop\проект\C#_reading\obj\Debug\net9.0\refint\C#_reading.dll
+C:\Users\user\Desktop\проект\C#_reading\obj\Debug\net9.0\C#_reading.pdb
+C:\Users\user\Desktop\проект\C#_reading\obj\Debug\net9.0\C#_reading.genruntimeconfig.cache
+C:\Users\user\Desktop\проект\C#_reading\obj\Debug\net9.0\ref\C#_reading.dll

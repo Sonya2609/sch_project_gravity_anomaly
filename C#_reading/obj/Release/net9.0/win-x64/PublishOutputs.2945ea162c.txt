@@ -1,0 +1,2 @@
+C:\Users\user\Desktop\проект\C#_reading\bin\Release\net9.0\win-x64\publish\C#_reading.pdb
+C:\Users\user\Desktop\проект\C#_reading\bin\Release\net9.0\win-x64\publish\C#_reading.exe

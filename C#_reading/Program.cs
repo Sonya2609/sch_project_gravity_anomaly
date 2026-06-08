@@ -4,269 +4,376 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 
-class NavigationData
+namespace AeroGravimetryProcessor
 {
-    public double Time;   // время
-    public double Lat;    // широта B (градусы)
-    public double Lon;    // долгота L (градусы)
-    public double Hei;    // высота h (м)
-    public double VE;     // восточная скорость V_E (м/с)
-    public double VN;     // северная скорость V_N (м/с)
-    public double VUp;    // вертикальная скорость V_UP (м/с)
-}
-
-class Program
-{
-    static void Main()
+    // ==================== МОДЕЛЬ ДАННЫХ ====================
+    
+    /// <summary>
+    /// Навигационные данные с одной точки измерения
+    /// </summary>
+    public class NavigationPoint
     {
-        string phasePath = "Phase_L1.VEL";
-        string gravPath = "Data_Gravimeter.dat";
-
-        // ==================== 1. ЧТЕНИЕ НАВИГАЦИОННЫХ ДАННЫХ ====================
-        List<NavigationData> navData = new List<NavigationData>();
-
-        using (StreamReader reader = new StreamReader(phasePath))
+        public double Time { get; set; }
+        public double Latitude { get; set; }   // градусы
+        public double Longitude { get; set; }  // градусы
+        public double Height { get; set; }     // метры
+        public double Ve { get; set; }         // восточная скорость, м/с
+        public double Vn { get; set; }         // северная скорость, м/с
+        public double Vup { get; set; }        // вертикальная скорость, м/с
+        public double Fup { get; set; }        // показания акселерометра, м/с²
+    }
+    
+    /// <summary>
+    /// Результат расчёта для одной точки
+    /// </summary>
+    public class CalculationResult
+    {
+        public double Time { get; set; }
+        public double AnomalyFromHeight { get; set; }
+        public double AnomalyFromVelocity { get; set; }
+        public double AnomalyFromGravimeter { get; set; }
+        public double AccelerationHeight { get; set; }
+        public double AccelerationVelocity { get; set; }
+        public double EtvosCorrection { get; set; }
+        public double NormalGravity { get; set; }
+    }
+    
+    // ==================== КОНСТАНТЫ ЭЛЛИПСОИДА ====================
+    
+    public static class EarthConstants
+    {
+        public const double A = 6378137.0;              // большая полуось, м
+        public const double E2 = 0.00669437999013;      // квадрат эксцентриситета
+        public const double Omega = 7.292115e-5;        // угловая скорость, рад/с
+        public const double Ge = 9.7803253359;          // g на экваторе, м/с²
+        public const double Beta1 = 0.00193185265241;   // коэффициент
+        public const double FreeAirCorrection = 3.086e-5; // поправка, (м/с²)/м
+    }
+    
+    // ==================== ФАЙЛОВЫЙ ВВОД/ВЫВОД ====================
+    
+    public class DataReader
+    {
+        /// <summary>
+        /// Чтение навигационного файла Phase_L1.VEL
+        /// </summary>
+        public List<NavigationPoint> ReadNavigation(string filePath)
         {
+            var points = new List<NavigationPoint>();
+            
+            using var reader = new StreamReader(filePath);
             string line;
             int lineNumber = 0;
-
+            
             while ((line = reader.ReadLine()) != null)
             {
                 lineNumber++;
-                if (string.IsNullOrWhiteSpace(line)) continue;
                 if (lineNumber <= 2) continue; // пропускаем заголовки
-
-                string[] parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 9) continue;
-
-                navData.Add(new NavigationData
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                
+                var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 8) continue;
+                
+                points.Add(new NavigationPoint
                 {
                     Time = double.Parse(parts[0], CultureInfo.InvariantCulture),
-                    Lat = double.Parse(parts[1], CultureInfo.InvariantCulture),
-                    Lon = double.Parse(parts[2], CultureInfo.InvariantCulture),
-                    Hei = double.Parse(parts[3], CultureInfo.InvariantCulture),
-                    VE = double.Parse(parts[5], CultureInfo.InvariantCulture),
-                    VN = double.Parse(parts[6], CultureInfo.InvariantCulture),
-                    VUp = double.Parse(parts[7], CultureInfo.InvariantCulture)
+                    Latitude = double.Parse(parts[1], CultureInfo.InvariantCulture),
+                    Longitude = double.Parse(parts[2], CultureInfo.InvariantCulture),
+                    Height = double.Parse(parts[3], CultureInfo.InvariantCulture),
+                    Ve = double.Parse(parts[5], CultureInfo.InvariantCulture),
+                    Vn = double.Parse(parts[6], CultureInfo.InvariantCulture),
+                    Vup = double.Parse(parts[7], CultureInfo.InvariantCulture)
                 });
             }
+            
+            Console.WriteLine($"Считано навигационных точек: {points.Count}");
+            return points;
         }
-        Console.WriteLine($"Считано навигационных точек: {navData.Count}");
-
-        // ==================== 2. ЧТЕНИЕ ДАННЫХ ГРАВИМЕТРА ====================
-        List<double> gravTime = new List<double>();
-        List<double> fUp = new List<double>();
-
-        using (StreamReader reader = new StreamReader(gravPath))
+        
+        /// <summary>
+        /// Чтение файла гравиметра Data_Gravimeter.dat
+        /// </summary>
+        public List<double> ReadGravimeter(string filePath)
         {
+            var fupValues = new List<double>();
+            
+            using var reader = new StreamReader(filePath);
             string line;
+            
             while ((line = reader.ReadLine()) != null)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
-
-                string trimmed = line.Trim();
+                
+                var trimmed = line.Trim();
                 if (!char.IsDigit(trimmed[0]) && trimmed[0] != '-') continue;
-
-                string[] parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                
+                var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length >= 2)
                 {
-                    if (double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out double timeVal) &&
-                        double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out double fupVal))
+                    if (double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out double fup))
                     {
-                        gravTime.Add(timeVal);
-                        fUp.Add(fupVal);
+                        fupValues.Add(fup);
                     }
                 }
             }
-        }
-        Console.WriteLine($"Считано точек гравиметра: {fUp.Count}");
-
-        // Синхронизация размеров (берём минимум)
-        int N = Math.Min(navData.Count, fUp.Count);
-        Console.WriteLine($"Количество точек для расчёта: {N}");
-
-        // Константы эллипсоида Земли (WGS84)
-        const double a = 6378137.0;           // большая полуось (м)
-        const double e2 = 0.00669437999013;   // квадрат эксцентриситета
-        const double omega = 7.292115e-5;     // угловая скорость вращения Земли (рад/с)
-        
-        // Константы для нормальной силы тяжести
-        const double g_e = 9.7803253359;      // нормальная сила тяжести на экваторе (м/с²)
-        const double beta1 = 0.00193185265241; // коэффициент
-        const double free_air_corr = 3.086e-5; // поправка свободного воздуха (м/с²)/м
-
-        // ==================== 3. РАСЧЁТ УСКОРЕНИЙ ТРЕМЯ СПОСОБАМИ ====================
-        double[] acc_height = new double[N];
-        double[] acc_velocity = new double[N];
-        double[] acc_gravimeter = new double[N];
-        double[] timeArr = new double[N];
-        double[] latArr = new double[N];
-        double[] lonArr = new double[N];
-        double[] heiArr = new double[N];
-        double[] veArr = new double[N];
-        double[] vnArr = new double[N];
-        double[] vupArr = new double[N];
-        
-        // Копируем данные в массивы для удобства
-        for (int i = 0; i < N; i++)
-        {
-            timeArr[i] = navData[i].Time;
-            latArr[i] = navData[i].Lat;
-            lonArr[i] = navData[i].Lon;
-            heiArr[i] = navData[i].Hei;
-            veArr[i] = navData[i].VE;
-            vnArr[i] = navData[i].VN;
-            vupArr[i] = navData[i].VUp;
-            acc_gravimeter[i] = fUp[i];
+            
+            Console.WriteLine($"Считано точек гравиметра: {fupValues.Count}");
+            return fupValues;
         }
         
-        // Расчёт ускорений для внутренних точек (i = 1..N-2)
-        for (int i = 1; i < N - 1; i++)
+        /// <summary>
+        /// Объединение навигационных данных и показаний гравиметра
+        /// </summary>
+        public List<NavigationPoint> MergeData(List<NavigationPoint> navPoints, List<double> fupValues)
         {
-            double dt1 = timeArr[i] - timeArr[i - 1];
-            double dt2 = timeArr[i + 1] - timeArr[i];
-            double dt_center = timeArr[i + 1] - timeArr[i - 1];
+            int count = Math.Min(navPoints.Count, fupValues.Count);
+            var result = new List<NavigationPoint>(count);
             
-            // 3.1 Ускорение из высоты (вторая производная)
-            double v1_height = (heiArr[i] - heiArr[i - 1]) / dt1;
-            double v2_height = (heiArr[i + 1] - heiArr[i]) / dt2;
-            acc_height[i] = (v2_height - v1_height) / ((dt1 + dt2) / 2.0);
-            
-            // 3.2 Ускорение из вертикальной скорости (первая производная)
-            acc_velocity[i] = (vupArr[i + 1] - vupArr[i - 1]) / dt_center;
-        }
-        
-        // Для границ (0 и N-1) экстраполируем значения
-        if (N > 2)
-        {
-            acc_height[0] = acc_height[1];
-            acc_height[N - 1] = acc_height[N - 2];
-            acc_velocity[0] = acc_velocity[1];
-            acc_velocity[N - 1] = acc_velocity[N - 2];
-        }
-        
-        // ==================== 4. РАСЧЁТ АНОМАЛИЙ ====================
-        // Формула: δg = g_etv + f_UP - g0 - a
-        
-        List<double> anomaly_height = new List<double>();
-        List<double> anomaly_velocity = new List<double>();
-        List<double> anomaly_gravimeter = new List<double>();
-        List<double> timeValid = new List<double>();
-        
-        for (int idx = 0; idx < N; idx++)
-        {
-            // Переводим широту в радианы
-            double B_rad = latArr[idx] * Math.PI / 180.0;
-            double sinB = Math.Sin(B_rad);
-            double sin2 = sinB * sinB;
-            double cosB = Math.Cos(B_rad);
-            
-            // 4.1 Радиусы кривизны эллипсоида
-            double RN = a * (1 - e2) / Math.Pow(1 - e2 * sin2, 1.5);  // меридиональный радиус
-            double RE = a / Math.Sqrt(1 - e2 * sin2);                  // радиус в prime vertical
-            
-            // 4.2 Поправка Этвеша (g_etv)
-            double g_etv = 2 * omega * veArr[idx] * cosB 
-                         + (veArr[idx] * veArr[idx]) / (RE + heiArr[idx]) 
-                         + (vnArr[idx] * vnArr[idx]) / (RN + heiArr[idx]);
-            
-            // 4.3 Нормальная сила тяжести g0
-            double g_norm = g_e * (1 + beta1 * sin2) / Math.Sqrt(1 - e2 * sin2);
-            double g0 = g_norm - free_air_corr * heiArr[idx];
-            
-            // 4.4 Аномалия по формуле: δg = g_etv + f_UP - g0 - a
-            double anomaly_h = g_etv + fUp[idx] - g0 - acc_height[idx];
-            double anomaly_v = g_etv + fUp[idx] - g0 - acc_velocity[idx];
-            double anomaly_g = g_etv + fUp[idx] - g0 - acc_gravimeter[idx];
-            
-            anomaly_height.Add(anomaly_h);
-            anomaly_velocity.Add(anomaly_v);
-            anomaly_gravimeter.Add(anomaly_g);
-            timeValid.Add(timeArr[idx]);
-        }
-        
-        // ==================== 5. СОХРАНЕНИЕ ПРОМЕЖУТОЧНОГО ФАЙЛА (УСКОРЕНИЯ) ====================
-        string accFilePath = "accelerations.txt";
-        using (StreamWriter writer = new StreamWriter(accFilePath))
-        {
-            writer.WriteLine("Time\tacc_height\tacc_velocity\tacc_gravimeter");
-            for (int idx = 0; idx < N; idx++)
+            for (int i = 0; i < count; i++)
             {
-                writer.WriteLine($"{timeArr[idx].ToString(CultureInfo.InvariantCulture)}\t" +
-                                 $"{acc_height[idx].ToString(CultureInfo.InvariantCulture)}\t" +
-                                 $"{acc_velocity[idx].ToString(CultureInfo.InvariantCulture)}\t" +
-                                 $"{acc_gravimeter[idx].ToString(CultureInfo.InvariantCulture)}");
+                var point = navPoints[i];
+                point.Fup = fupValues[i];
+                result.Add(point);
             }
+            
+            Console.WriteLine($"Объединено точек для расчёта: {count}");
+            return result;
         }
-        Console.WriteLine($"Сохранён промежуточный файл: {accFilePath}");
-        
-        // ==================== 6. СОХРАНЕНИЕ ИТОГОВОГО ФАЙЛА С АНОМАЛИЯМИ ====================
-        string anomalyFilePath = "anomalies.txt";
-        using (StreamWriter writer = new StreamWriter(anomalyFilePath))
+    }
+    
+    public class DataWriter
+    {
+        /// <summary>
+        /// Сохранение результатов в файл
+        /// </summary>
+        public void SaveResults(string filePath, List<CalculationResult> results)
         {
+            using var writer = new StreamWriter(filePath);
             writer.WriteLine("Time\tanomaly_height\tanomaly_velocity\tanomaly_gravimeter");
-            for (int idx = 0; idx < N; idx++)
+            
+            foreach (var r in results)
             {
-                writer.WriteLine($"{timeValid[idx].ToString(CultureInfo.InvariantCulture)}\t" +
-                                 $"{anomaly_height[idx].ToString(CultureInfo.InvariantCulture)}\t" +
-                                 $"{anomaly_velocity[idx].ToString(CultureInfo.InvariantCulture)}\t" +
-                                 $"{anomaly_gravimeter[idx].ToString(CultureInfo.InvariantCulture)}");
+                writer.WriteLine($"{r.Time.ToString(CultureInfo.InvariantCulture)}\t" +
+                                 $"{r.AnomalyFromHeight.ToString(CultureInfo.InvariantCulture)}\t" +
+                                 $"{r.AnomalyFromVelocity.ToString(CultureInfo.InvariantCulture)}\t" +
+                                 $"{r.AnomalyFromGravimeter.ToString(CultureInfo.InvariantCulture)}");
+            }
+            
+            Console.WriteLine($"Сохранён файл: {filePath}");
+        }
+        
+        /// <summary>
+        /// Сохранение промежуточных данных (ускорения)
+        /// </summary>
+        public void SaveAccelerations(string filePath, List<CalculationResult> results)
+        {
+            using var writer = new StreamWriter(filePath);
+            writer.WriteLine("Time\tacc_height\tacc_velocity\tacc_gravimeter");
+            
+            foreach (var r in results)
+            {
+                writer.WriteLine($"{r.Time.ToString(CultureInfo.InvariantCulture)}\t" +
+                                 $"{r.AccelerationHeight.ToString(CultureInfo.InvariantCulture)}\t" +
+                                 $"{r.AccelerationVelocity.ToString(CultureInfo.InvariantCulture)}\t" +
+                                 $"{r.AnomalyFromGravimeter.ToString(CultureInfo.InvariantCulture)}");
+            }
+            
+            Console.WriteLine($"Сохранён файл: {filePath}");
+        }
+    }
+    
+    // ==================== ВЫЧИСЛИТЕЛЬ ====================
+    
+    public class AnomalyCalculator
+    {
+        /// <summary>
+        /// Расчёт ускорений тремя способами (конечные разности)
+        /// </summary>
+        private void CalculateAccelerations(List<NavigationPoint> points, 
+                                            out double[] accHeight, 
+                                            out double[] accVelocity)
+        {
+            int n = points.Count;
+            accHeight = new double[n];
+            accVelocity = new double[n];
+            
+            // Заполняем ускорение из гравиметра (просто копируем)
+            // accGravimeter[i] = points[i].Fup - будет использоваться напрямую
+            
+            for (int i = 1; i < n - 1; i++)
+            {
+                double dt1 = points[i].Time - points[i - 1].Time;
+                double dt2 = points[i + 1].Time - points[i].Time;
+                double dtCenter = points[i + 1].Time - points[i - 1].Time;
+                
+                // Ускорение из высоты (вторая производная)
+                double v1 = (points[i].Height - points[i - 1].Height) / dt1;
+                double v2 = (points[i + 1].Height - points[i].Height) / dt2;
+                accHeight[i] = (v2 - v1) / ((dt1 + dt2) / 2.0);
+                
+                // Ускорение из вертикальной скорости (первая производная)
+                accVelocity[i] = (points[i + 1].Vup - points[i - 1].Vup) / dtCenter;
+            }
+            
+            // Экстраполяция граничных значений
+            if (n > 2)
+            {
+                accHeight[0] = accHeight[1];
+                accHeight[n - 1] = accHeight[n - 2];
+                accVelocity[0] = accVelocity[1];
+                accVelocity[n - 1] = accVelocity[n - 2];
             }
         }
-        Console.WriteLine($"Сохранён итоговый файл с аномалиями: {anomalyFilePath}");
         
-        // ==================== 7. ДОПОЛНИТЕЛЬНО: ПОПРАВКА ЭТВЕША И g0 ====================
-        string etvFilePath = "etv_and_g0.txt";
-        using (StreamWriter writer = new StreamWriter(etvFilePath))
+        /// <summary>
+        /// Расчёт нормальной силы тяжести g0
+        /// </summary>
+        private double CalculateNormalGravity(double latitudeDeg, double height)
         {
-            writer.WriteLine("Time\tg_etv\tg_norm\tg0");
-            for (int idx = 0; idx < N; idx++)
+            double phiRad = latitudeDeg * Math.PI / 180.0;
+            double sin2 = Math.Sin(phiRad) * Math.Sin(phiRad);
+            
+            double gNorm = EarthConstants.Ge * (1 + EarthConstants.Beta1 * sin2) 
+                         / Math.Sqrt(1 - EarthConstants.E2 * sin2);
+            
+            return gNorm - EarthConstants.FreeAirCorrection * height;
+        }
+        
+        /// <summary>
+        /// Расчёт поправки Этвеша
+        /// </summary>
+        private double CalculateEtvosCorrection(NavigationPoint point)
+        {
+            double phiRad = point.Latitude * Math.PI / 180.0;
+            double sin2 = Math.Sin(phiRad) * Math.Sin(phiRad);
+            double cosPhi = Math.Cos(phiRad);
+            
+            // Радиусы кривизны
+            double rn = EarthConstants.A * (1 - EarthConstants.E2) 
+                      / Math.Pow(1 - EarthConstants.E2 * sin2, 1.5);
+            double re = EarthConstants.A / Math.Sqrt(1 - EarthConstants.E2 * sin2);
+            
+            return 2 * EarthConstants.Omega * point.Ve * cosPhi
+                   + (point.Ve * point.Ve) / (re + point.Height)
+                   + (point.Vn * point.Vn) / (rn + point.Height);
+        }
+        
+        /// <summary>
+        /// Расчёт аномалий для всех точек
+        /// </summary>
+        public List<CalculationResult> Calculate(List<NavigationPoint> points)
+        {
+            int n = points.Count;
+            
+            // Расчёт ускорений
+            CalculateAccelerations(points, out double[] accHeight, out double[] accVelocity);
+            
+            var results = new List<CalculationResult>(n);
+            
+            for (int i = 0; i < n; i++)
             {
-                double B_rad = latArr[idx] * Math.PI / 180.0;
-                double sin2 = Math.Pow(Math.Sin(B_rad), 2);
-                double cosB = Math.Cos(B_rad);
+                var p = points[i];
                 
-                double g_norm = g_e * (1 + beta1 * sin2) / Math.Sqrt(1 - e2 * sin2);
-                double g0_val = g_norm - free_air_corr * heiArr[idx];
+                double g0 = CalculateNormalGravity(p.Latitude, p.Height);
+                double etvos = CalculateEtvosCorrection(p);
                 
-                double RN = a * (1 - e2) / Math.Pow(1 - e2 * sin2, 1.5);
-                double RE = a / Math.Sqrt(1 - e2 * sin2);
-                double g_etv_val = 2 * omega * veArr[idx] * cosB 
-                                 + (veArr[idx] * veArr[idx]) / (RE + heiArr[idx]) 
-                                 + (vnArr[idx] * vnArr[idx]) / (RN + heiArr[idx]);
+                // Формула: δg = g_etv + f_UP - g0 - a
+                double anomalyHeight = etvos + p.Fup - g0 - accHeight[i];
+                double anomalyVelocity = etvos + p.Fup - g0 - accVelocity[i];
+                double anomalyGravimeter = etvos + p.Fup - g0 - p.Fup; // a = f_up, поэтому сокращается
                 
-                writer.WriteLine($"{timeArr[idx].ToString(CultureInfo.InvariantCulture)}\t" +
-                                 $"{g_etv_val.ToString(CultureInfo.InvariantCulture)}\t" +
-                                 $"{g_norm.ToString(CultureInfo.InvariantCulture)}\t" +
-                                 $"{g0_val.ToString(CultureInfo.InvariantCulture)}");
+                results.Add(new CalculationResult
+                {
+                    Time = p.Time,
+                    AnomalyFromHeight = anomalyHeight,
+                    AnomalyFromVelocity = anomalyVelocity,
+                    AnomalyFromGravimeter = anomalyGravimeter,
+                    AccelerationHeight = accHeight[i],
+                    AccelerationVelocity = accVelocity[i],
+                    EtvosCorrection = etvos,
+                    NormalGravity = g0
+                });
+            }
+            
+            return results;
+        }
+    }
+    
+    // ==================== ОТЧЁТ ====================
+    
+    public class StatisticsReporter
+    {
+        public void PrintStatistics(List<CalculationResult> results)
+        {
+            Console.WriteLine("\n========== СТАТИСТИКА АНОМАЛИЙ ==========");
+            
+            var anomalies = results.Select(r => r.AnomalyFromGravimeter).ToList();
+            double avg = anomalies.Average();
+            double min = anomalies.Min();
+            double max = anomalies.Max();
+            double std = Math.Sqrt(anomalies.Sum(x => Math.Pow(x - avg, 2)) / anomalies.Count);
+            
+            Console.WriteLine($"Метод из акселерометров:");
+            Console.WriteLine($"  Среднее: {avg:E6} м/с²");
+            Console.WriteLine($"  Мин/Макс: {min:E6} / {max:E6} м/с²");
+            Console.WriteLine($"  СКО: {std:E6} м/с²");
+            
+            Console.WriteLine("\nПервые 5 значений (все три метода):");
+            Console.WriteLine($"{"Time",12} {"Δg_height",14} {"Δg_velocity",14} {"Δg_gravimeter",14}");
+            
+            for (int i = 0; i < Math.Min(5, results.Count); i++)
+            {
+                var r = results[i];
+                Console.WriteLine($"{r.Time,12:F3} {r.AnomalyFromHeight,14:F6} {r.AnomalyFromVelocity,14:F6} {r.AnomalyFromGravimeter,14:F6}");
             }
         }
-        Console.WriteLine($"Сохранён файл с поправкой Этвеша и g0: {etvFilePath}");
-        
-        
-        // ==================== 8. ВЫВОД СТАТИСТИКИ ====================
-        Console.WriteLine("\n========== РАСЧЁТ ЗАВЕРШЁН ==========");
-        Console.WriteLine($"Всего обработано точек: {N}");
-        
-        // Статистика по аномалиям (метод из акселерометров)
-        double avg_anomaly = anomaly_gravimeter.Average();
-        double min_anomaly = anomaly_gravimeter.Min();
-        double max_anomaly = anomaly_gravimeter.Max();
-        double std_anomaly = Math.Sqrt(anomaly_gravimeter.Select(x => Math.Pow(x - avg_anomaly, 2)).Average());
-        
-        Console.WriteLine($"\nСтатистика аномалий (метод из акселерометров):");
-        Console.WriteLine($"  Среднее: {avg_anomaly:E6} м/с²");
-        Console.WriteLine($"  Мин/Макс: {min_anomaly:E6} / {max_anomaly:E6} м/с²");
-        Console.WriteLine($"  СКО: {std_anomaly:E6} м/с²");
-        
-        Console.WriteLine("\nПервые 5 значений аномалий (все три метода):");
-        Console.WriteLine($"{"Time",12} {"Δg_height",14} {"Δg_velocity",14} {"Δg_gravimeter",14}");
-        for (int idx = 0; idx < Math.Min(5, N); idx++)
+    }
+    
+    // ==================== ГЛАВНАЯ ПРОГРАММА ====================
+    
+    class Program
+    {
+        static void Main()
         {
-            Console.WriteLine($"{timeValid[idx]:F3}   {anomaly_height[idx]:F6}   {anomaly_velocity[idx]:F6}   {anomaly_gravimeter[idx]:F6}");
+            try
+            {
+                // Инициализация компонентов
+                var reader = new DataReader();
+                var calculator = new AnomalyCalculator();
+                var writer = new DataWriter();
+                var reporter = new StatisticsReporter();
+                
+                // Чтение данных
+                var navPoints = reader.ReadNavigation("Phase_L1.VEL");
+                var fupValues = reader.ReadGravimeter("Data_Gravimeter.dat");
+                
+                // Объединение данных
+                var mergedData = reader.MergeData(navPoints, fupValues);
+                
+                // Расчёт аномалий
+                var results = calculator.Calculate(mergedData);
+                
+                // Сохранение результатов
+                writer.SaveResults("anomalies.txt", results);
+                writer.SaveAccelerations("accelerations.txt", results);
+                
+                // Вывод статистики
+                reporter.PrintStatistics(results);
+                
+                Console.WriteLine("\n========== РАСЧЁТ ЗАВЕРШЁН ==========");
+            }
+            catch (FileNotFoundException ex)
+            {
+                Console.WriteLine($"Ошибка: файл не найден - {ex.FileName}");
+                Console.WriteLine("Убедитесь, что Phase_L1.VEL и Data_Gravimeter.dat находятся в папке с программой");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка: {ex.Message}");
+            }
+            
+            Console.WriteLine("\nНажмите любую клавишу для выхода...");
+            Console.ReadKey();
         }
-        
-        Console.WriteLine("\nНажмите любую клавишу для выхода...");
-        Console.ReadKey();
     }
 }
